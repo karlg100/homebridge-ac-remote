@@ -8,6 +8,7 @@ This is a simple plugin for use with Particle devices to transmit AC codes to a 
 * Wire up an IR LED
 * put in an enclosure (optional)
 * place in range of your target AC unit
+* install and configure the plugin into Homebridge
 
 # Hardware
 Plans will be posted later in this repo.
