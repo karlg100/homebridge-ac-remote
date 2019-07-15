@@ -27,7 +27,7 @@ Note this is very much beta, and still a long way to go to be reliable.  Right n
   "platforms": [
     {
       "platform": "ACRemote",
-      "name": "Remote AC Devices",
+      "name": "AC Remote Devices",
       "access_token": "<<access token>>",
       "cloudurl": "https://api.spark.io/v1/devices/",
       "devices": [
