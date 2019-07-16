@@ -4,6 +4,9 @@ This is a simple plugin for use with Particle devices to transmit AC codes to a 
 
 Note this is very much beta, and still a long way to go to be reliable.  Right now you can command/control via a particle, but not able to read back telementry.  Homebridge and the particle will become out of sync if you restart homebridge.
 
+## Tested AC untis
+* Frigidiare Units
+
 ## How to Use
 
 * Flash your Particle Device
@@ -27,7 +30,7 @@ Note this is very much beta, and still a long way to go to be reliable.  Right n
   "platforms": [
     {
       "platform": "ACRemote",
-      "name": "Remote AC Devices",
+      "name": "AC Remote Devices",
       "access_token": "<<access token>>",
       "cloudurl": "https://api.spark.io/v1/devices/",
       "devices": [
