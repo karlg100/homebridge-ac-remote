@@ -47,6 +47,7 @@ function RemoteAccessory(log, url, access_token, device) {
 	//this.eventName = device["event_name"]; // we're going to hardcode these events
 	this.accessToken = access_token;
 	this.url = url;
+  this.pollingInterval = device["pollingInterval"] || 10000;
 
   this.make = "Particle";
   this.model = "Photon";
@@ -95,7 +96,6 @@ function RemoteAccessory(log, url, access_token, device) {
 
   this.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
 
-
 /*
 	this.eventUrl = this.url + this.deviceId + "/events/" + this.eventName + "?access_token=" + this.accessToken;
 	var es = new eventSource(eventUrl);
@@ -110,6 +110,10 @@ function RemoteAccessory(log, url, access_token, device) {
 		this.processEventData.bind(this), false);
 */
 
+  //this.updateAll();
+  this.log('pollingInterval is set to '+this.pollingInterval);
+  var self = this;
+  this.updateTimer = setInterval(function () { self.updateAll(); }, this.pollingInterval);
 }
 
 RemoteAccessory.prototype = {
@@ -126,57 +130,70 @@ RemoteAccessory.prototype = {
 
   // Required
   getCurrentHeatingCoolingState: function(callback) {
-    this.log("getCurrentHeatingCoolingState: ", this.currentCoolingState);
-    callback(null, this.currentCoolingState);
-  },
-
-  setCurrentHeatingCoolingState: function(value, callback) {
-    this.log("setCurrentHeatingCoolingState: ", value);
-    this.targetCoolingState = value;
-    callback(null);
+    var self = this;
+    this.getVariable("Mode", function(error, result) {
+      if (error) return console.error(error);
+      self.log("getCurrentHeatingCoolingState got response: ", result);
+      if (result == 0) self.currentCoolingState = Characteristic.CurrentHeatingCoolingState.OFF;
+      else if (result == 1) self.currentCoolingState = Characteristic.CurrentHeatingCoolingState.COOL;
+      else if (result == 2) self.currentCoolingState = Characteristic.CurrentHeatingCoolingState.COOL;
+      else if (result == 3) self.currentCoolingState = Characteristic.CurrentHeatingCoolingState.HEAT;
+      self.log("getCurrentHeatingCoolingState: ", self.currentCoolingState);
+      self.thermostatService
+        .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
+        .updateValue(self.currentCoolingState);
+      callback(null, self.currentCoolingState);
+    });
   },
 
   getTargetHeatingCoolingState: function(callback) {
     var self = this;
     self.log("getTargetHeatingCoolingState: ", self.targetCoolingState);
-    callback(null, self.targetCoolingState);
+    this.getVariable("Mode", function(error, result) {
+      if (error) return console.error(error);
+      if (result == 0) self.targetCoolingState = Characteristic.TargetHeatingCoolingState.OFF;
+      else if (result == 1) self.targetCoolingState = Characteristic.TargetHeatingCoolingState.AUTO;
+      else if (result == 2) self.targetCoolingState = Characteristic.TargetHeatingCoolingState.COOL;
+      else if (result == 3) self.targetCoolingState = Characteristic.TargetHeatingCoolingState.HEAT;
+      self.thermostatService
+        .getCharacteristic(Characteristic.TargetHeatingCoolingState)
+        .updateValue(self.targetCoolingState);
+      callback(null, self.targetCoolingState);
+    });
+  },
+
+  sleepOn: function(value, callback) {
+    callback();
   },
 
   setTargetHeatingCoolingState: function(value, callback) {
     var self = this;
     this.log('setTargetHeatingCoolingState()');
-    if (value == Characteristic.TargetHeatingCoolingState.OFF) {
-      this.sendCommand("LogicalCommand", "Off", callback);
-    } else if (value == Characteristic.TargetHeatingCoolingState.AUTO) {
-      this.sendCommand("LogicalCommand", "Auto", callback);
-      //this.sendCommand("IRCommand", "FanAuto", this.logger);
-    } else if (value == Characteristic.TargetHeatingCoolingState.COOL) {
-      this.sendCommand("LogicalCommand", "Cool", callback);
-      //this.sendCommand("IRCommand", "FanUp", this.logger);
-      //this.sendCommand("IRCommand", "FanUp", this.logger);
-    } else if (value == Characteristic.TargetHeatingCoolingState.HEAT) {
-      this.sendCommand("LogicalCommand", "FanMode", callback);
-      //this.sendCommand("IRCommand", "FanAuto", this.logger);
-      //this.sendCommand("IRCommand", "FanUp", this.logger);
-      //this.sendCommand("IRCommand", "FanUp", this.logger);
-    }
-    self.currentCoolingState = self.targetCoolingState;
+    var command = "";
+    if (value == Characteristic.TargetHeatingCoolingState.OFF)
+      command = "Off";
+    else if (value == Characteristic.TargetHeatingCoolingState.AUTO)
+      command = "Auto";
+    else if (value == Characteristic.TargetHeatingCoolingState.COOL)
+      command = "Cool";
+    else if (value == Characteristic.TargetHeatingCoolingState.HEAT)
+      command = "FanMode";
 
-/*
-    this.AC.mode(self.applianceId, newMode, function(err, result) {
-      if (err) return console.error(err);
+    this.sendCommand("LogicalCommand", command, function(error, result) {
+      if (error) return console.error(error);
       self.log("setTargetHeatingCoolingState from/to: ", self.targetCoolingState, value);
       self.targetCoolingState = value;
       self.currentCoolingState = self.targetCoolingState;
       callback(null);
     });
-*/
   },
+
   getCurrentTemperature: function(callback) {
     var self = this;
     if ( this.disableTemp )
       callback(null, undefined);
 /*
+    this.getVariable("Unit", function(error, result) {
     this.AC.getRoomTemp(self.applianceId, function(err, result) {
       if (err) return console.error(err);
       if (self.temperatureDisplayUnits == Characteristic.TemperatureDisplayUnits.FAHRENHEIT) self.currentTemperature = fahrenheitToCelsius(result);
@@ -185,61 +202,68 @@ RemoteAccessory.prototype = {
       callback(null, self.currentTemperature);
     });
 */
+    self.thermostatService
+      .getCharacteristic(Characteristic.CurrentTemperature)
+      .updateValue(self.currentTemperature);
     callback(null, self.currentTemperature);
   },
 
   getTargetTemperature: function(callback) {
     var self = this;
 
-/*
-    this.AC.getTemp(self.applianceId, function(err, result) {
-      if (err) return console.error(err);
+    this.getVariable("Temp", function(error, result) {
+      self.log("got response: ", result);
+      if (error) return console.error(error);
       if (self.temperatureDisplayUnits == Characteristic.TemperatureDisplayUnits.FAHRENHEIT) self.targetTemperature = fahrenheitToCelsius(result);
       if (self.temperatureDisplayUnits == Characteristic.TemperatureDisplayUnits.CELSIUS) self.targetTemperature = fahrenheitToCelsius(result);
+      self.thermostatService
+        .getCharacteristic(Characteristic.TargetTemperature)
+        .updateValue(self.targetTemperature);
       self.log("getTargetTemperature: %s -> %s", result, self.targetTemperature);
       callback(null, self.targetTemperature);
     });
-*/
-    callback(null, self.targetTemperature);
   },
 
   setTargetTemperature: function(value, callback) {
     var self = this;
-//    this.AC.setTemp(self.applianceId, celsiusToFahrenheit(value), function(err, result) {
-//      if (err) return console.error(err);
+    if (self.temperatureDisplayUnits == Characteristic.TemperatureDisplayUnits.FAHRENHEIT) value = celsiusToFahrenheit(value);
+    this.sendCommand("LogicalCommand", "Temp="+value, function(error, result) {
+      if (error) return console.error(error);
       self.targetTemperature = value;
-      self.log("setTargetTemperature to: ", celsiusToFahrenheit(value));
-      this.sendCommand("LogicalCommand", "Temp="+celsiusToFahrenheit(value), callback);
-//    });
+      
+      self.log("setTargetTemperature to: ", value);
+      callback(null, self.targetTemperature);
+    });
   },
+
   getTemperatureDisplayUnits: function(callback) {
     var self = this;
-//    this.AC.getUnit(self.applianceId, function(err, result) {
-//      if (err) return console.error(err);
-//      if (result == self.AC.FAHRENHEIT) self.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
-//      else if (result == self.AC.CELSIUS) self.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
+    this.getVariable("Unit", function(error, result) {
+      if (error) return console.error(error);
+      if (result == false) self.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.FAHRENHEIT;
+      else if (result == true) self.temperatureDisplayUnits = Characteristic.TemperatureDisplayUnits.CELSIUS;
+      self.thermostatService
+        .getCharacteristic(Characteristic.TemperatureDisplayUnits)
+        .updateValue(self.temperatureDisplayUnits);
       self.log("getTemperatureDisplayUnits: ", self.temperatureDisplayUnits);
       return callback(null, self.temperatureDisplayUnits);
-//    });
+    });
   },
 
   setTemperatureDisplayUnits: function(value, callback) {
     var self = this;
-    if (value == Characteristic.TemperatureDisplayUnits.FAHRENHEIT) var newValue = self.AC.FAHRENHEIT;
-    else if (value == Characteristic.TemperatureDisplayUnits.CELSIUS) var newValue = self.AC.CELSIUS;
-    this.temperatureDisplayUnits = value;
-
-/*
-    self.AC.changeUnits(self.applianceId, newValue, function(err, result) {
-      if (err) return console.error(err);
-      self.log("setTemperatureDisplayUnits - %s and %s", self.temperatureDisplayUnits, value);
+    if (value == Characteristic.TemperatureDisplayUnits.FAHRENHEIT) var newValue = "Fahrenheit";
+    else if (value == Characteristic.TemperatureDisplayUnits.CELSIUS) var newValue = "Celsius";
+    this.sendCommand("LogicalCommand", newValue, function(error, result) {
+      if (error) return console.error(error);
+      self.temperatureDisplayUnits = newValue;
+      self.log("setTemperatureDisplayUnits - %s and %s", self.temperatureDisplayUnits, newValue);
       return callback(null);
     });
-*/
   },
+
   getFanSpeed: function(callback) {
     var self = this;
-
 
 /*
     this.AC.getFanMode(self.applianceId, function(err, result) {
@@ -323,32 +347,32 @@ RemoteAccessory.prototype = {
 
     // you can OPTIONALLY create an information service if you wish to override
     // the default values for things like serial number, model, etc.
-    var informationService = new Service.AccessoryInformation();
+    this.informationService = new Service.AccessoryInformation();
 
-    informationService
+    this.informationService
       .setCharacteristic(Characteristic.Manufacturer, this.make)
       .setCharacteristic(Characteristic.Model, this.model)
       .setCharacteristic(Characteristic.FirmwareRevision, this.firmware)
       .setCharacteristic(Characteristic.SerialNumber, this.serialNumber);
 
-    var thermostatService = new Service.Thermostat(this.name);
+    this.thermostatService = new Service.Thermostat(this.name);
 
     // Required Characteristics
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.CurrentHeatingCoolingState)
-      .on('get', this.getCurrentHeatingCoolingState.bind(this))
-      .on('set', this.setCurrentHeatingCoolingState.bind(this));
+      .on('get', this.getCurrentHeatingCoolingState.bind(this));
+      //.on('set', this.setCurrentHeatingCoolingState.bind(this));
 
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.TargetHeatingCoolingState)
       .on('get', this.getTargetHeatingCoolingState.bind(this))
       .on('set', this.setTargetHeatingCoolingState.bind(this));
 
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.CurrentTemperature)
       .on('get', this.getCurrentTemperature.bind(this));
 
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.TargetTemperature)
       .setProps({
         minValue: 15.5,
@@ -357,36 +381,68 @@ RemoteAccessory.prototype = {
       .on('get', this.getTargetTemperature.bind(this))
       .on('set', this.setTargetTemperature.bind(this));
 
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.TemperatureDisplayUnits)
       .on('get', this.getTemperatureDisplayUnits.bind(this))
       .on('set', this.setTemperatureDisplayUnits.bind(this));
 
-    thermostatService
+    this.thermostatService
       .addCharacteristic(Characteristic.RotationSpeed)
       .on('get', this.getFanSpeed.bind(this))
       .on('set', this.setFanSpeed.bind(this));
 
     // Optional Characteristics
 /*
-    thermostatService
+    this.thermostatService
       .getCharacteristic(Characteristic.Name)
       .on('get', this.getName.bind(this))
       .on('set', this.setName.bind(this));
 */
 
-    return [informationService, thermostatService];
+    //var sleepService = new Service.Switch(this.name);
+    //sleepService.getCharacteristic(Characteristic.On)
+      //.on('set', this.sleepOn.bind(this));
+
+    return [this.informationService, this.thermostatService];
   },
 
   logger: function(result) {
     debug(result);
   },
 
+  getVariable: function(variableName, callback) {
+	  debug("getVariable()");
+
+	  debug("URL: " + this.url);
+	  debug("Device ID: " + this.deviceId)
+
+	  var onUrl = this.url + this.deviceId + "/" + variableName + "?access_token=" + this.accessToken;
+
+	  debug("Calling function: " + onUrl);
+
+	  request.get(
+		  onUrl,
+		  function(error, response, body) {
+			  console.log(body);
+        if (!error) {
+          try {
+            resp = JSON.parse(body);
+				    callback(null, resp.result);
+          } catch(e) {
+            this.log(e);
+            callback(true, undefined);
+          }
+        } else
+          callback(true, undefined);
+		  }
+	  );
+  },
+
   sendCommand: function(functionName, state, callback) {
 	  debug("sendCommand()");
 
 	  debug("URL: " + this.url);
-	  debug("Device ID: " + this.deviceId);
+	  debug("Device ID: " + this.deviceId)
 
 	  var onUrl = this.url + this.deviceId + "/" + functionName;
 
